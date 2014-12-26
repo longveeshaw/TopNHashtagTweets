@@ -17,6 +17,7 @@ import backtype.storm.tuple.Values;
 import backtype.storm.utils.Utils;
 
 import java.util.Map;
+import java.util.Arrays;
 
 import com.lambdaworks.redis.RedisClient;
 import com.lambdaworks.redis.RedisConnection;
@@ -33,7 +34,8 @@ public class ReportBolt extends BaseRichBolt
 {
   // place holder to keep the connection to redis
   transient RedisConnection<String,String> redis;
-
+  private String[] skipWords = {"http://", "https://", "(", "a", "an", "the", "for", "retweet", "RETWEET", "follow", "FOLLOW"};
+  Rankings lastSeenRankablelist = null;
   @Override
   public void prepare(
       Map                     map,
@@ -50,15 +52,34 @@ public class ReportBolt extends BaseRichBolt
   @Override
   public void execute(Tuple tuple)
   {
-    Rankings rankablelist = (Rankings) tuple.getValue(0);
-    for (Rankable r : rankablelist.getRankings()) {
-       String word = r.getObject().toString();
-       Long count = r.getCount();
-       redis.publish("WordCountTopology", word + "|" + Long.toString(count));
-    }
 
-    // publish the word count to redis using word as the key
-    //redis.publish("WordCountTopology", word + "|" + Long.toString(count));
+    String componentId = tuple.getSourceComponent();
+    if(componentId.equals("tweet-spout") && lastSeenRankablelist != null) {
+      String tweet = tuple.getString(0);
+      // provide the delimiters for splitting the tweet
+      String delims = "[ .,?!]+";
+      // now split the tweet into tokens
+      String[] tokens = tweet.split(delims);
+
+      // for each token/word, emit it
+      for (String token : tokens) {
+        if (token.length() > 3 &&  !Arrays.asList(skipWords).contains(token)) {
+          if (token.startsWith("#")) {
+            for (Rankable r : lastSeenRankablelist.getRankings()) {
+              String word = r.getObject().toString();
+              Long count = r.getCount();
+              //redis.publish("WordCountTopology", word + "*****|" + Long.toString(30L));
+              if (token.equals(word)){
+                  redis.publish("WordCountTopology", tweet + "|" + Long.toString(count));
+              }
+            }
+          }
+        }
+      }
+    } else if  (componentId.equals("total-ranker")) {
+      // just update the last seen top N hashtags
+      lastSeenRankablelist = (Rankings) tuple.getValue(0);
+    }
   }
 
   public void declareOutputFields(OutputFieldsDeclarer declarer)

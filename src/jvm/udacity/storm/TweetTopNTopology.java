@@ -54,7 +54,10 @@ class TweetTopNTopology
     builder.setBolt("intermediate-ranker", new IntermediateRankingsBolt(TOP_N)).fieldsGrouping("count-bolt", new Fields("word"));
     builder.setBolt("total-ranker", new TotalRankingsBolt(TOP_N)).globalGrouping("intermediate-ranker");
     // attach the report bolt using global grouping - parallelism of 1
-    builder.setBolt("report-bolt", new ReportBolt(), 1).globalGrouping("total-ranker");
+    builder.setBolt("report-bolt", new ReportBolt(), 1)
+					.globalGrouping("total-ranker")
+					.globalGrouping("tweet-spout");
+					
 
     // create the default config object
     Config conf = new Config();
